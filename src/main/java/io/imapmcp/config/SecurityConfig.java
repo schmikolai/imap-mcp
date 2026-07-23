@@ -38,6 +38,14 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .formLogin(form -> form
                         .loginPage("/login")
+                        // Without this, Spring Security's default post-login
+                        // redirect goes to "/" whenever there's no saved
+                        // request (e.g. the user opened /login directly
+                        // rather than being bounced there from a protected
+                        // page) — and this app has no controller mapped to
+                        // "/" at all, so that 404s via static-resource
+                        // fallback ("No static resource .").
+                        .defaultSuccessUrl("/accounts")
                         .permitAll())
                 .logout(logout -> logout.permitAll())
                 .headers(headers -> headers
