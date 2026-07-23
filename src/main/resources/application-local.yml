@@ -1,0 +1,39 @@
+# Local development only — activate with --spring.profiles.active=local
+# (or SPRING_PROFILES_ACTIVE=local). Matches docker-compose.yml's defaults so
+# `docker compose up -d && ./gradlew bootRun --args='--spring.profiles.active=local'`
+# works with no other setup. Never point this profile at real user data —
+# see LocalDevEncryptionService.
+spring:
+  # App runtime connects as the unprivileged imapmcp_app role (see V4
+  # migration) — never as imapmcp, which owns the schema and is also a
+  # Postgres superuser in the default docker-compose Postgres image
+  # (superusers always bypass RLS, regardless of FORCE ROW LEVEL SECURITY).
+  datasource:
+    url: jdbc:postgresql://localhost:5432/imapmcp
+    username: imapmcp_app
+    password: imapmcp_app_local_dev
+
+  flyway:
+    url: jdbc:postgresql://localhost:5432/imapmcp
+    user: imapmcp
+    password: imapmcp
+    placeholders:
+      appDbUser: imapmcp_app
+      appDbPassword: imapmcp_app_local_dev
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+imapmcp:
+  crypto:
+    kms-key-id: local-dev-unused
+    aws-region: eu-central-1
+  oauth:
+    issuer-uri: http://localhost:8080
+    seed-client:
+      client-id: local-dev-client
+      client-secret: local-dev-secret
+      display-name: Local dev test client
+      redirect-uris: http://localhost:9999/callback

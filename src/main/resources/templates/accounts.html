@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Your IMAP accounts — imap-mcp</title>
+</head>
+<body>
+<h1>Your IMAP accounts</h1>
+
+<table>
+    <thead>
+    <tr>
+        <th>Display name</th>
+        <th>Host</th>
+        <th>Username</th>
+        <th>Status</th>
+        <th>Last verified</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="account : ${accounts}">
+        <td th:text="${account.displayName}"></td>
+        <td th:text="${account.host} + ':' + ${account.port}"></td>
+        <td th:text="${account.username}"></td>
+        <td th:text="${account.status}"></td>
+        <td th:text="${account.lastVerifiedAt}"></td>
+    </tr>
+    </tbody>
+</table>
+
+<p><a th:href="@{/accounts/link}">Link another account</a></p>
+</body>
+</html>

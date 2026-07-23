@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Link an IMAP account — imap-mcp</title>
+</head>
+<body>
+<h1>Link an IMAP account</h1>
+
+<p th:if="${error}" th:text="${error}" style="color:red;"></p>
+
+<form th:action="@{/accounts/link}" th:object="${linkImapAccountForm}" method="post">
+    <div>
+        <label for="displayName">Display name</label>
+        <input type="text" id="displayName" th:field="*{displayName}" required="required"/>
+    </div>
+    <div>
+        <label for="host">IMAP host</label>
+        <input type="text" id="host" th:field="*{host}" placeholder="imap.example.com" required="required"/>
+    </div>
+    <div>
+        <label for="port">Port</label>
+        <input type="number" id="port" th:field="*{port}" required="required"/>
+    </div>
+    <div>
+        <label for="tlsMode">TLS mode</label>
+        <select id="tlsMode" th:field="*{tlsMode}">
+            <option value="IMPLICIT">Implicit TLS (port 993)</option>
+            <option value="STARTTLS">STARTTLS</option>
+        </select>
+    </div>
+    <div>
+        <label for="username">Username</label>
+        <input type="text" id="username" th:field="*{username}" required="required"/>
+    </div>
+    <div>
+        <label for="password">Password / app-password</label>
+        <input type="password" id="password" th:field="*{password}" required="required"/>
+        <p><small>Use a provider app-specific password where available — it can be revoked independently of your main account password.</small></p>
+    </div>
+    <button type="submit">Link account</button>
+</form>
+</body>
+</html>

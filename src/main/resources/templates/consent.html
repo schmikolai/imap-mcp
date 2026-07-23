@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Authorize access — imap-mcp</title>
+</head>
+<body>
+<h1>Authorize <span th:text="${clientName}"></span></h1>
+<p><span th:text="${clientName}"></span> is requesting access to
+    <strong th:text="${principalName}"></strong>'s mailbox account.</p>
+
+<form th:action="@{/oauth2/authorize}" method="post">
+    <input type="hidden" name="client_id" th:value="${clientId}"/>
+    <input type="hidden" name="state" th:value="${state}"/>
+
+    <div th:if="${not #maps.isEmpty(scopes)}">
+        <p>This app is requesting the following permissions:</p>
+        <div th:each="entry : ${scopes}" style="margin-bottom: 0.5em;">
+            <label>
+                <input type="checkbox" name="scope" th:value="${entry.key}" checked="checked"/>
+                <strong th:text="${entry.key}"></strong> — <span th:text="${entry.value}"></span>
+            </label>
+        </div>
+    </div>
+
+    <div th:if="${not #maps.isEmpty(previouslyApprovedScopes)}">
+        <p><small>Already approved previously:</small></p>
+        <div th:each="entry : ${previouslyApprovedScopes}">
+            <label>
+                <input type="checkbox" name="scope" th:value="${entry.key}" checked="checked" disabled="disabled"/>
+                <span th:text="${entry.key}"></span> — <small th:text="${entry.value}"></small>
+            </label>
+            <input type="hidden" name="scope" th:value="${entry.key}"/>
+        </div>
+    </div>
+
+    <div style="margin-top: 1.5em;">
+        <button type="submit">Authorize</button>
+        <button type="submit" name="cancel" value="true" formnovalidate="formnovalidate">Cancel</button>
+    </div>
+</form>
+</body>
+</html>

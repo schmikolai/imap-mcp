@@ -1,0 +1,44 @@
+# Gradle
+.gradle/
+build/
+
+# Java
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local/secret config — never commit real credentials.
+# application.yml / application-local.yml themselves ARE committed (the
+# local profile only ever holds throwaway dev-only secrets); this is for
+# anything a developer adds locally on top of them.
+.env
+.env.*
+application-local-override.yml
+*.jks
+*.p12
+*.pem
+
+# Claude Code local session state (machine/session-specific, not shared config)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
