@@ -4,7 +4,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.6"
 }
 
-group = "io.imapmcp"
+group = "io.schmikolai"
 version = "0.1.0-SNAPSHOT"
 
 // Spring Boot 3.3.4's BOM manages testcontainers.version at 1.19.8. That version's
