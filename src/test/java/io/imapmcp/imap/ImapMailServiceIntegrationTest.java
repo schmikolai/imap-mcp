@@ -67,6 +67,16 @@ class ImapMailServiceIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+
+        // Flyway connects as a separate, schema-owning role (see CLAUDE.md's
+        // "Credential encryption"/multi-tenant notes) rather than reusing
+        // spring.datasource.* above, so it needs its own override here too —
+        // otherwise it falls back to application.yml's default localhost:5432
+        // owner connection and can hit an unrelated Postgres instance instead
+        // of this container.
+        registry.add("spring.flyway.url", postgres::getJdbcUrl);
+        registry.add("spring.flyway.user", postgres::getUsername);
+        registry.add("spring.flyway.password", postgres::getPassword);
     }
 
     @BeforeAll
@@ -94,6 +104,15 @@ class ImapMailServiceIntegrationTest {
         System.setProperty("javax.net.ssl.trustStore", keystorePath.toString());
         System.setProperty("javax.net.ssl.trustStorePassword", "changeit");
 
+        // GreenMail's SSL server socket factory doesn't read the standard
+        // javax.net.ssl.keyStore property above (that only affects our IMAP
+        // client's trust decisions) - it serves its own bundled self-signed
+        // cert unless pointed at a different keystore via these properties,
+        // so without this it presents a cert our truststore never trusts.
+        System.setProperty("greenmail.tls.keystore.file", keystorePath.toString());
+        System.setProperty("greenmail.tls.keystore.password", "changeit");
+        System.setProperty("greenmail.tls.key.password", "changeit");
+
         greenMail = new GreenMail(new ServerSetup[]{ServerSetupTest.SMTP, ServerSetupTest.IMAPS});
         greenMail.start();
         greenMail.setUser(TEST_EMAIL, TEST_USERNAME, TEST_PASSWORD);
@@ -111,6 +130,9 @@ class ImapMailServiceIntegrationTest {
         System.clearProperty("javax.net.ssl.keyStorePassword");
         System.clearProperty("javax.net.ssl.trustStore");
         System.clearProperty("javax.net.ssl.trustStorePassword");
+        System.clearProperty("greenmail.tls.keystore.file");
+        System.clearProperty("greenmail.tls.keystore.password");
+        System.clearProperty("greenmail.tls.key.password");
     }
 
     @Autowired

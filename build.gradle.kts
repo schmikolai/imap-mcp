@@ -7,6 +7,14 @@ plugins {
 group = "io.imapmcp"
 version = "0.1.0-SNAPSHOT"
 
+// Spring Boot 3.3.4's BOM manages testcontainers.version at 1.19.8. That version's
+// DockerClientProviderStrategy probes the daemon with a hardcoded Docker API version
+// 1.32, which fails outright against a daemon enforcing a minimum API version of 1.40
+// (rather than negotiating first and only falling back to 1.32 on failure, as later
+// releases do). Override the BOM property so the whole testcontainers module family
+// (not just the artifacts pinned below) resolves past that fixed release.
+extra["testcontainers.version"] = "1.21.4"
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
