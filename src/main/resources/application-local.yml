@@ -36,4 +36,4 @@ imapmcp:
       client-id: local-dev-client
       client-secret: local-dev-secret
       display-name: Local dev test client
-      redirect-uris: http://localhost:9999/callback
+      redirect-uris: http://localhost:6274/oauth/callback

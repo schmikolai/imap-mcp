@@ -5,6 +5,7 @@ import io.imapmcp.tenant.ImapAccountRepository;
 import io.imapmcp.tenant.TenantUser;
 import io.imapmcp.tenant.TenantUserRepository;
 import jakarta.validation.Valid;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -56,6 +57,9 @@ public class ImapAccountController {
                     form.getUsername(), form.getPassword()));
         } catch (ImapAccountLinkingService.LinkingFailedException e) {
             model.addAttribute("error", "Could not verify this IMAP login. Check the host/port/credentials and try again.");
+            return "link-account";
+        } catch (DataIntegrityViolationException e) {
+            model.addAttribute("error", "You already have an account linked with that name. Choose a different name.");
             return "link-account";
         }
         return "redirect:/accounts";

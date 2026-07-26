@@ -36,8 +36,13 @@
 
     <div style="margin-top: 1.5em;">
         <button type="submit">Authorize</button>
-        <button type="submit" name="cancel" value="true" formnovalidate="formnovalidate">Cancel</button>
     </div>
+</form>
+
+<form th:action="@{/oauth2/authorize}" method="post">
+    <input type="hidden" name="client_id" th:value="${clientId}"/>
+    <input type="hidden" name="state" th:value="${state}"/>
+    <button type="submit" name="cancel" value="true" formnovalidate="formnovalidate">Cancel</button>
 </form>
 </body>
 </html>

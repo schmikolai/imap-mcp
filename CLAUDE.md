@@ -8,6 +8,8 @@ An open-source MCP (Model Context Protocol) server that lets AI agents organize 
 
 Security is the central design constraint here, not an afterthought: this endpoint is assumed to run in a hostile public environment. Preserve that posture in any change — see "Hard-won gotchas" below before touching auth, crypto, or the security filter chains.
 
+See [README.md](README.md) for the MCP tool-to-scope table and the full list of configuration environment variables — not duplicated here.
+
 ## Commands
 
 Build/run (Gradle wrapper, no local Gradle install needed):
