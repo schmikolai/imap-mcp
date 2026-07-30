@@ -31,6 +31,13 @@ The `local` profile (`application-local.yml`) points at the compose services and
 
 `ImapMailServiceIntegrationTest` (GreenMail + Testcontainers) additionally needs: Docker with API version ≥ 1.40 (older docker-java/Testcontainers versions may not negotiate correctly against restrictive Docker socket proxies), and `keytool` on PATH (it generates a throwaway self-signed cert at `@BeforeAll` so GreenMail can serve real implicit TLS — production code path is exercised unmodified, never relaxed for tests).
 
+GraalVM native image (`org.graalvm.buildtools.native` in `build.gradle.kts`):
+```
+./gradlew nativeCompile                       # requires a GraalVM JDK 21 as the Gradle toolchain, not just any JDK 21
+docker build -t imap-mcp:native .              # multi-stage: native-image-community builder -> distroless/cc-debian12 runtime
+```
+The Dockerfile is the reliably reproducible way to build it (pins the builder JDK). See "Native image gotchas" below before changing entities, adding dependencies, or touching the runtime base image — several of these were only discoverable by actually booting the compiled binary, not by a successful `nativeCompile`.
+
 ## Architecture
 
 ### Package map (`io.imapmcp.*`)
@@ -98,3 +105,11 @@ These were each found by actually running the app, not by code review — re-int
 - **A `@Primary` bean can't have its own constructor/factory-method parameter of the same type be resolved by type alone** — Spring tries to satisfy it with the primary candidate, i.e. itself, and refuses to start over the circular reference. When wrapping/decorating a bean of the same type it produces (e.g. `TenantAwareDataSource` wrapping the app's `DataSource`), give the wrapped, non-primary instance its own explicitly-named `@Bean` method and inject it by that name — don't rely on `@Qualifier` guessing Spring Boot's internal auto-configured bean name (it isn't necessarily `"dataSource"`).
 - **Flyway placeholder map keys (`spring.flyway.placeholders.*`) are taken verbatim from the property source — not relaxed-bound like ordinary `@ConfigurationProperties` fields.** A YAML key of `app-db-user` does **not** satisfy a `${appDbUser}` token in migration SQL; keep the YAML key and the SQL placeholder token in matching case (camelCase is simplest for both).
 - **A `Converter<Jwt, AbstractAuthenticationToken>` that itself queries an RLS-protected table has a chicken-and-egg problem with `TenantContextFilter`:** the converter runs as part of authentication, *before* any filter added via `addFilterAfter(_, AuthorizationFilter.class)` ever executes. `JwtMcpAuthenticationConverter` sets `TenantContext` itself, immediately after resolving the tenant and before its own `imap_account` lookup — waiting for `TenantContextFilter` means that lookup runs with no tenant context set and gets zero rows back under RLS's fail-closed default (surfaces as a confusing "user has no linked IMAP account" for an account that clearly exists).
+
+### Native image gotchas
+
+All three of these compile cleanly and only fail when the binary actually runs — `nativeCompile` succeeding is not proof the image works.
+
+- **The `ghcr.io/graalvm/native-image-community:21` builder image is missing `xargs`** (Oracle Linux 9 minimal), which the Gradle wrapper script shells out to. The Dockerfile runs `microdnf install -y findutils` before invoking `./gradlew` to fix this.
+- **`gcr.io/distroless/cc-debian12` has no `libz.so.1`**, which the native binary dynamically links (`java.util.zip` at runtime). The Dockerfile copies it out of the builder image (`/usr/lib64/libz.so.1.2.11`) into the runtime image rather than switching to a heavier base — distroless has no package manager to install it with.
+- **Hibernate's multi-ID entity loader reflectively allocates an array of the entity's `@Id` type** (`Array.newInstance`, not a constructor call) — both `ImapAccount` and `TenantUser` key on `UUID`, so native-image's static analysis tree-shakes `UUID[]` away as unreachable and it fails at `EntityManagerFactory` startup, not at build time. Fixed via `src/main/resources/META-INF/native-image/io.imapmcp/imap-mcp/reflect-config.json` (`"unsafeAllocated": true`) rather than Spring's `RuntimeHints` API, because the `MemberCategory` enum in the Spring Framework version this project pins (6.1.x) predates that flag. If a new `@Id`-bearing entity type is added, it needs its own `Foo[]` entry here too.
