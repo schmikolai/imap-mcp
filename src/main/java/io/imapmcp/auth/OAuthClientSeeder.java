@@ -69,7 +69,12 @@ public class OAuthClientSeeder implements ApplicationRunner {
         seed.getRedirectUris().forEach(builder::redirectUri);
 
         if (seed.getClientSecret() != null && !seed.getClientSecret().isBlank()) {
+            // Accept both — real-world clients (Claude's connector included)
+            // send confidential-client credentials as client_secret_post
+            // rather than an Authorization: Basic header, and Spring
+            // Authorization Server rejects an unlisted method outright.
             builder.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                    .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
                     .clientSecret(passwordEncoder.encode(seed.getClientSecret()));
         } else {
             // Public client (no secret) — still requires PKCE above.
