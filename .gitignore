@@ -42,3 +42,4 @@ application-local-override.yml
 # Claude Code local session state (machine/session-specific, not shared config)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+CLAUDE.local.md
