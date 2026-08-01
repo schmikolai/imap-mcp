@@ -21,12 +21,10 @@ public class ImapAccount {
     @Id
     private UUID id;
 
-    // EAGER, not LAZY: a lazy proxy for this association needs a runtime
-    // bytecode provider to generate, which GraalVM native-image doesn't
-    // have (no JIT) — Hibernate's native-image support forces
-    // bytecode.provider=none, and the proxy creation throws at load time.
-    // Nothing in the app actually navigates this association (everything
-    // resolves TenantUser by id directly), so eager loading costs nothing.
+    // EAGER, not LAZY: nothing in the app actually navigates this
+    // association (everything resolves TenantUser by id directly), so
+    // eager loading costs nothing and skips the lazy-proxy machinery
+    // entirely.
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "tenant_user_id", nullable = false)
     private TenantUser tenantUser;

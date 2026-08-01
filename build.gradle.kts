@@ -2,7 +2,6 @@ plugins {
     java
     id("org.springframework.boot") version "3.3.4"
     id("io.spring.dependency-management") version "1.1.6"
-    id("org.graalvm.buildtools.native") version "0.10.3"
 }
 
 group = "io.schmikolai"
@@ -88,25 +87,4 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
-}
-
-graalvmNative {
-    binaries {
-        named("main") {
-            imageName.set("imap-mcp")
-            // Tink's AesGcmJce and the AWS SDK's TLS calls to KMS both go
-            // through JCE/JSSE providers resolved by name at runtime
-            // (SunJCE, SunEC, ...) rather than direct class references, so
-            // native-image needs to be told explicitly to keep them instead
-            // of tree-shaking them as "unreachable".
-            buildArgs.add("--enable-all-security-services")
-            buildArgs.add("-H:+ReportExceptionStackTraces")
-        }
-    }
-    metadataRepository {
-        // Pulls curated reflect/resource/proxy config for common libraries
-        // (AWS SDK v2, nimbus-jose-jwt, etc.) from the shared GraalVM
-        // Reachability Metadata Repository instead of hand-writing it here.
-        enabled = true
-    }
 }

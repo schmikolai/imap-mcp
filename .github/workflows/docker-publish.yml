@@ -9,9 +9,7 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # GraalVM native-image compilation is slow and memory-hungry compared to a
-    # plain JVM build; give it plenty of headroom rather than tuning it down.
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
