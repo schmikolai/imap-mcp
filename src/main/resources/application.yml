@@ -64,6 +64,18 @@ imapmcp:
       client-secret: ${OAUTH_SEED_CLIENT_SECRET:}
       display-name: ${OAUTH_SEED_CLIENT_NAME:Development test client}
       redirect-uris: ${OAUTH_SEED_CLIENT_REDIRECT_URIS:}
+  rate-limit:
+    # "N requests per period" buckets, distributed via Redis (see
+    # RateLimitConfig) so limits hold even across multiple instances.
+    mcp-tool-calls:
+      capacity: 60
+      refill-period: 1m
+    oauth-endpoints:
+      capacity: 20
+      refill-period: 1m
+    web-auth:
+      capacity: 10
+      refill-period: 1m
 
 management:
   endpoints:

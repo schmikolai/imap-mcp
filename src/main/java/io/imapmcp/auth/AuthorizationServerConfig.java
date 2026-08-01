@@ -5,11 +5,16 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.imapmcp.mcp.McpScopes;
+import io.imapmcp.ratelimit.RateLimitFilter;
+import io.imapmcp.ratelimit.RateLimitProperties;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,8 +31,12 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -51,9 +60,25 @@ public class AuthorizationServerConfig {
 
     @Bean
     @Order(0)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
+                                                                        ProxyManager<String> bucket4jProxyManager,
+                                                                        RateLimitProperties rateLimitProperties) throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 new OAuth2AuthorizationServerConfigurer();
+
+        RequestMatcher rateLimitedEndpoints = new OrRequestMatcher(
+                new AntPathRequestMatcher("/oauth2/token", HttpMethod.POST.name()),
+                new AntPathRequestMatcher("/oauth2/authorize"));
+        // Per client IP, not per authenticated principal — /oauth2/authorize
+        // has no principal yet on first hit, and this is meant to slow down
+        // credential-stuffing/auth-code-guessing before authentication ever
+        // happens. See RateLimitFilter's javadoc on the X-Forwarded-For
+        // caveat if a reverse proxy is ever added in front of this app.
+        RateLimitFilter rateLimitFilter = new RateLimitFilter(
+                key -> bucket4jProxyManager.builder().build("rl:oauth:" + key,
+                        rateLimitProperties.getOauthEndpoints()::toBucketConfiguration),
+                HttpServletRequest::getRemoteAddr,
+                rateLimitedEndpoints);
 
         http
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
@@ -89,7 +114,8 @@ public class AuthorizationServerConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .defaultAuthenticationEntryPointFor(
                                 new LoginUrlAuthenticationEntryPoint("/login"),
-                                new MediaTypeRequestMatcher(MediaType.TEXT_HTML)));
+                                new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
+                .addFilterBefore(rateLimitFilter, AuthorizationFilter.class);
 
         return http.build();
     }

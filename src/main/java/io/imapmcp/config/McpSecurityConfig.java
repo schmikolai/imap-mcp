@@ -1,9 +1,14 @@
 package io.imapmcp.config;
 
+import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.imapmcp.auth.OAuthProperties;
 import io.imapmcp.mcp.JwtMcpAuthenticationConverter;
+import io.imapmcp.ratelimit.RateLimitFilter;
+import io.imapmcp.ratelimit.RateLimitProperties;
+import io.imapmcp.tenant.TenantContext;
 import io.imapmcp.tenant.TenantContextFilter;
 import io.imapmcp.tenant.TenantUserRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -14,6 +19,8 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthen
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
+
+import java.util.UUID;
 
 /**
  * A separate filter chain for {@code /mcp/**}, authenticated as an OAuth2
@@ -37,7 +44,15 @@ public class McpSecurityConfig {
     @Order(1)
     public SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http, JwtMcpAuthenticationConverter jwtMcpAuthenticationConverter,
                                                        TenantUserRepository tenantUserRepository,
-                                                       OAuthProperties oAuthProperties) throws Exception {
+                                                       OAuthProperties oAuthProperties,
+                                                       ProxyManager<String> bucket4jProxyManager,
+                                                       RateLimitProperties rateLimitProperties) throws Exception {
+        RateLimitFilter rateLimitFilter = new RateLimitFilter(
+                key -> bucket4jProxyManager.builder().build("rl:mcp:" + key,
+                        rateLimitProperties.getMcpToolCalls()::toBucketConfiguration),
+                McpSecurityConfig::tenantOrRemoteAddr,
+                null);
+
         http
                 .securityMatcher("/mcp/**")
                 .csrf(csrf -> csrf.disable())
@@ -46,9 +61,23 @@ public class McpSecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .authenticationEntryPoint(protectedResourceMetadataEntryPoint(oAuthProperties))
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtMcpAuthenticationConverter)))
-                .addFilterAfter(new TenantContextFilter(tenantUserRepository), AuthorizationFilter.class);
+                .addFilterAfter(new TenantContextFilter(tenantUserRepository), AuthorizationFilter.class)
+                .addFilterAfter(rateLimitFilter, TenantContextFilter.class);
 
         return http.build();
+    }
+
+    /**
+     * Keyed by tenant, not IP, so every agent acting for one tenant shares
+     * one bucket regardless of source IP. {@link TenantContext} is already
+     * populated by {@link TenantContextFilter}, which runs immediately
+     * before this filter in the chain; the remote-address fallback is
+     * defensive only — this chain requires {@code authenticated()}, so
+     * tenant resolution should never actually fail here.
+     */
+    private static String tenantOrRemoteAddr(HttpServletRequest request) {
+        UUID tenantId = TenantContext.get();
+        return tenantId != null ? tenantId.toString() : request.getRemoteAddr();
     }
 
     /**
