@@ -34,7 +34,8 @@ public class SecurityConfig {
     public SecurityFilterChain webSecurityFilterChain(HttpSecurity http, TenantUserRepository tenantUserRepository) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/signup", "/login", "/css/**", "/actuator/health", "/error").permitAll()
+                        .requestMatchers("/signup", "/login", "/css/**", "/actuator/health", "/error",
+                                "/.well-known/oauth-protected-resource").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form
                         .loginPage("/login")

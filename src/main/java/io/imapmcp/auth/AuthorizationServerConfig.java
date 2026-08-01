@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import io.imapmcp.mcp.McpScopes;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -57,7 +58,24 @@ public class AuthorizationServerConfig {
         http
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, authorizationServer ->
-                        authorizationServer.authorizationEndpoint(endpoint -> endpoint.consentPage("/oauth2/consent")))
+                        authorizationServer
+                                .authorizationEndpoint(endpoint -> endpoint.consentPage("/oauth2/consent"))
+                                // Without scopes_supported here, an MCP client
+                                // doing AS-metadata-only discovery (no
+                                // resource_metadata hint yet followed) has no
+                                // way to learn the mcp:* scopes and ends up
+                                // sending /oauth2/authorize with no scope
+                                // param at all — which our consent page then
+                                // renders with nothing to approve, and Spring
+                                // Authorization Server treats that as an
+                                // outright deny (misreported as
+                                // access_denied/"client_id").
+                                .authorizationServerMetadataEndpoint(endpoint -> endpoint
+                                        .authorizationServerMetadataCustomizer(builder -> builder
+                                                .scope(McpScopes.MAIL_READ)
+                                                .scope(McpScopes.MAIL_WRITE)
+                                                .scope(McpScopes.MAILBOX_MANAGE)
+                                                .scope(McpScopes.MAIL_DELETE))))
                 // /oauth2/authorize (+ our /oauth2/consent) is the one
                 // genuinely browser/session-driven endpoint here and keeps
                 // CSRF protection (satisfied via the custom consent page's

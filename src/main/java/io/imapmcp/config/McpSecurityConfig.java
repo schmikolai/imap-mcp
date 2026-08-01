@@ -1,13 +1,17 @@
 package io.imapmcp.config;
 
+import io.imapmcp.auth.OAuthProperties;
 import io.imapmcp.mcp.JwtMcpAuthenticationConverter;
 import io.imapmcp.tenant.TenantContextFilter;
 import io.imapmcp.tenant.TenantUserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 
@@ -32,15 +36,40 @@ public class McpSecurityConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http, JwtMcpAuthenticationConverter jwtMcpAuthenticationConverter,
-                                                       TenantUserRepository tenantUserRepository) throws Exception {
+                                                       TenantUserRepository tenantUserRepository,
+                                                       OAuthProperties oAuthProperties) throws Exception {
         http
                 .securityMatcher("/mcp/**")
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtMcpAuthenticationConverter)))
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(protectedResourceMetadataEntryPoint(oAuthProperties))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtMcpAuthenticationConverter)))
                 .addFilterAfter(new TenantContextFilter(tenantUserRepository), AuthorizationFilter.class);
 
         return http.build();
+    }
+
+    /**
+     * Wraps Spring's default bearer-token 401 handling to add a
+     * {@code resource_metadata} hint pointing at
+     * {@code /.well-known/oauth-protected-resource} (RFC 9728), so an MCP
+     * client hitting {@code /mcp} with no token — and no prior knowledge of
+     * this server at all — can discover the authorization server and the
+     * {@code mcp:*} scopes to request, rather than guessing and requesting
+     * none (see {@code ProtectedResourceMetadataController}).
+     */
+    private static AuthenticationEntryPoint protectedResourceMetadataEntryPoint(OAuthProperties properties) {
+        BearerTokenAuthenticationEntryPoint delegate = new BearerTokenAuthenticationEntryPoint();
+        String resourceMetadataUri = properties.getIssuerUri() + "/.well-known/oauth-protected-resource";
+        return (request, response, authException) -> {
+            delegate.commence(request, response, authException);
+            String wwwAuthenticate = response.getHeader(HttpHeaders.WWW_AUTHENTICATE);
+            if (wwwAuthenticate != null) {
+                response.setHeader(HttpHeaders.WWW_AUTHENTICATE,
+                        wwwAuthenticate + ", resource_metadata=\"" + resourceMetadataUri + "\"");
+            }
+        };
     }
 }
