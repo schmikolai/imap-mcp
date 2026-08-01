@@ -1,0 +1,78 @@
+# Production stack.
+#
+# Usage:
+#   ./generate-env.sh                                  # once, to create .env
+#   # then fill in IMAGE, KMS_KEY_ID, AWS_*, OAUTH_ISSUER_URI in .env — see
+#   # generate-env.sh's own output for exactly which keys need manual values
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Unlike docker-compose.yml at the repo root (local dev), postgres/redis
+# ports are not published to the host — only the app talks to them, over
+# the compose-internal network. Put a reverse proxy in front of the app
+# port for TLS; this compose file only terminates plain HTTP.
+name: imap-mcp
+
+services:
+  app:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+    image: ${IMAGE}:${IMAGE_TAG}
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8080}:8080"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.imap-mcp.rule=Host(`${OAUTH_ISSUER_URI}`)
+      - traefik.http.routers.imap-mcp.tls=true
+      - traefik.http.routers.imap-mcp.entrypoints=websecure
+      - traefik.http.routers.imap-mcp.tls.certresolver=mytlschallenge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      # The schema-owning role Flyway migrates as (V4 migration then creates
+      # the unprivileged DB_APP_USER role the app actually connects as) —
+      # see the "Multi-tenant isolation" note in CLAUDE.md.
+      POSTGRES_USER: ${DB_OWNER_USER}
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD}
+    volumes:
+      - imapmcp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_OWNER_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+    image: redis:7-alpine
+    volumes:
+      - imapmcp-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  imapmcp-postgres-data:
+  imapmcp-redis-data:
