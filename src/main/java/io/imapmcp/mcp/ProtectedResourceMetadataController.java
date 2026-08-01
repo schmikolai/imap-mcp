@@ -26,7 +26,13 @@ public class ProtectedResourceMetadataController {
         this.issuerUri = properties.getIssuerUri();
     }
 
-    @GetMapping("/.well-known/oauth-protected-resource")
+    // RFC 9728 §3.1: the metadata URL is formed by inserting the resource's
+    // own path *after* the well-known segment, not just the bare well-known
+    // path — since our resource identifier is ".../mcp" (not the origin
+    // root), a spec-compliant client requests ".../oauth-protected-resource/mcp".
+    // The bare path is kept too as a lenient fallback for clients that don't
+    // do the insertion.
+    @GetMapping({"/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"})
     public Map<String, Object> metadata() {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("resource", issuerUri + "/mcp");

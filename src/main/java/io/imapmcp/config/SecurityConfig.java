@@ -35,7 +35,8 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/signup", "/login", "/css/**", "/actuator/health", "/error",
-                                "/.well-known/oauth-protected-resource").permitAll()
+                                "/.well-known/oauth-protected-resource",
+                                "/.well-known/oauth-protected-resource/mcp").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form
                         .loginPage("/login")

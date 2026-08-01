@@ -62,7 +62,7 @@ public class McpSecurityConfig {
      */
     private static AuthenticationEntryPoint protectedResourceMetadataEntryPoint(OAuthProperties properties) {
         BearerTokenAuthenticationEntryPoint delegate = new BearerTokenAuthenticationEntryPoint();
-        String resourceMetadataUri = properties.getIssuerUri() + "/.well-known/oauth-protected-resource";
+        String resourceMetadataUri = properties.getIssuerUri() + "/.well-known/oauth-protected-resource/mcp";
         return (request, response, authException) -> {
             delegate.commence(request, response, authException);
             String wwwAuthenticate = response.getHeader(HttpHeaders.WWW_AUTHENTICATE);
