@@ -1,5 +1,7 @@
 package io.imapmcp.imap;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Store;
@@ -18,7 +20,7 @@ public class ImapConnectionPool {
 
     private final GenericKeyedObjectPool<AccountKey, Store> pool;
 
-    public ImapConnectionPool(ImapStorePooledFactory factory, ImapProperties properties) {
+    public ImapConnectionPool(ImapStorePooledFactory factory, ImapProperties properties, MeterRegistry meterRegistry) {
         GenericKeyedObjectPoolConfig<Store> config = new GenericKeyedObjectPoolConfig<>();
         config.setMaxTotalPerKey(properties.getMaxConnectionsPerAccount());
         config.setMaxIdlePerKey(properties.getMaxConnectionsPerAccount());
@@ -26,6 +28,9 @@ public class ImapConnectionPool {
         config.setMinEvictableIdleDuration(java.time.Duration.ofMinutes(2));
         config.setTimeBetweenEvictionRuns(java.time.Duration.ofMinutes(1));
         this.pool = new GenericKeyedObjectPool<>(factory, config);
+
+        Gauge.builder("imap.pool.active", pool, GenericKeyedObjectPool::getNumActive).register(meterRegistry);
+        Gauge.builder("imap.pool.idle", pool, GenericKeyedObjectPool::getNumIdle).register(meterRegistry);
     }
 
     public Store borrow(AccountKey key) throws Exception {

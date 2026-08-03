@@ -2,6 +2,7 @@ package io.imapmcp.ratelimit;
 
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,6 +42,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final Function<String, Bucket> bucketResolver;
     private final Function<HttpServletRequest, String> keyExtractor;
     private final RequestMatcher scopeMatcher;
+    private final MeterRegistry meterRegistry;
+    private final String surface;
 
     /**
      * @param scopeMatcher if non-null, only requests matching it are
@@ -48,13 +51,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
      *                     untouched. Pass {@code null} when the whole
      *                     filter chain is already scoped to what should be
      *                     limited (e.g. a chain matched to {@code /mcp/**}).
+     * @param surface      tags emitted {@code ratelimit.requests} metrics
+     *                     (e.g. {@code "mcp"}, {@code "oauth"}, {@code "web-auth"}).
      */
     public RateLimitFilter(Function<String, Bucket> bucketResolver,
                             Function<HttpServletRequest, String> keyExtractor,
-                            RequestMatcher scopeMatcher) {
+                            RequestMatcher scopeMatcher,
+                            MeterRegistry meterRegistry,
+                            String surface) {
         this.bucketResolver = bucketResolver;
         this.keyExtractor = keyExtractor;
         this.scopeMatcher = scopeMatcher;
+        this.meterRegistry = meterRegistry;
+        this.surface = surface;
     }
 
     @Override
@@ -70,11 +79,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
 
         if (probe.isConsumed()) {
+            meterRegistry.counter("ratelimit.requests", "surface", surface, "outcome", "accepted").increment();
             response.setHeader("X-RateLimit-Remaining", Long.toString(probe.getRemainingTokens()));
             filterChain.doFilter(request, response);
             return;
         }
 
+        meterRegistry.counter("ratelimit.requests", "surface", surface, "outcome", "rejected").increment();
         long retryAfterSeconds = Math.max(1, probe.getNanosToWaitForRefill() / 1_000_000_000);
         response.setStatus(429); // HTTP 429 Too Many Requests (not in HttpServletResponse's SC_* constants)
         response.setHeader("Retry-After", Long.toString(retryAfterSeconds));

@@ -12,6 +12,9 @@ import jakarta.mail.Store;
 import jakarta.mail.UIDFolder;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import jakarta.mail.search.AndTerm;
 import jakarta.mail.search.ComparisonTerm;
 import jakarta.mail.search.FlagTerm;
@@ -42,10 +45,13 @@ public class ImapMailService {
 
     private final ImapConnectionPool connectionPool;
     private final MimeContentExtractor mimeContentExtractor;
+    private final CircuitBreakerRegistry circuitBreakerRegistry;
 
-    public ImapMailService(ImapConnectionPool connectionPool, MimeContentExtractor mimeContentExtractor) {
+    public ImapMailService(ImapConnectionPool connectionPool, MimeContentExtractor mimeContentExtractor,
+                            CircuitBreakerRegistry circuitBreakerRegistry) {
         this.connectionPool = connectionPool;
         this.mimeContentExtractor = mimeContentExtractor;
+        this.circuitBreakerRegistry = circuitBreakerRegistry;
     }
 
     public List<FolderInfo> listFolders(UUID tenantUserId, UUID imapAccountId) {
@@ -255,28 +261,39 @@ public class ImapMailService {
 
     private <T> T withStore(UUID tenantUserId, UUID imapAccountId, StoreCallback<T> callback) {
         AccountKey key = new AccountKey(tenantUserId, imapAccountId);
-        Store store;
-        try {
-            store = connectionPool.borrow(key);
-        } catch (Exception e) {
-            throw new ImapOperationException("Failed to obtain IMAP connection", e);
-        }
+        // One breaker per (tenant, account) — same granularity as the
+        // connection pool's own key, so a flaky provider on one account
+        // never trips the breaker for another tenant or another account.
+        CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker(tenantUserId + ":" + imapAccountId);
 
-        boolean healthy = true;
         try {
-            return callback.call(store);
-        } catch (MessagingException e) {
-            healthy = false;
-            throw new ImapOperationException("IMAP operation failed", e);
-        } catch (RuntimeException e) {
-            healthy = false;
-            throw e;
-        } finally {
-            if (healthy) {
-                connectionPool.returnStore(key, store);
-            } else {
-                connectionPool.invalidate(key, store);
-            }
+            return circuitBreaker.executeSupplier(() -> {
+                Store store;
+                try {
+                    store = connectionPool.borrow(key);
+                } catch (Exception e) {
+                    throw new ImapOperationException("Failed to obtain IMAP connection", e);
+                }
+
+                boolean healthy = true;
+                try {
+                    return callback.call(store);
+                } catch (MessagingException e) {
+                    healthy = false;
+                    throw new ImapOperationException("IMAP operation failed", e);
+                } catch (RuntimeException e) {
+                    healthy = false;
+                    throw e;
+                } finally {
+                    if (healthy) {
+                        connectionPool.returnStore(key, store);
+                    } else {
+                        connectionPool.invalidate(key, store);
+                    }
+                }
+            });
+        } catch (CallNotPermittedException e) {
+            throw new ImapOperationException("IMAP account temporarily unavailable after repeated failures", e);
         }
     }
 

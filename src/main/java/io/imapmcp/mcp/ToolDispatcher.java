@@ -1,18 +1,26 @@
 package io.imapmcp.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.imapmcp.audit.AuditLogService;
 import io.imapmcp.imap.ImapMailService;
 import io.imapmcp.imap.dto.SearchCriteria;
 import io.imapmcp.mcp.dto.ToolCallResult;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Executes one {@code tools/call} against {@link ImapMailService}, scoped
@@ -44,18 +52,27 @@ public class ToolDispatcher {
 
     private final ImapMailService imapMailService;
     private final ObjectMapper objectMapper;
+    private final AuditLogService auditLogService;
+    private final MeterRegistry meterRegistry;
 
-    public ToolDispatcher(ImapMailService imapMailService, ObjectMapper objectMapper) {
+    public ToolDispatcher(ImapMailService imapMailService, ObjectMapper objectMapper,
+                           AuditLogService auditLogService, MeterRegistry meterRegistry) {
         this.imapMailService = imapMailService;
         this.objectMapper = objectMapper;
+        this.auditLogService = auditLogService;
+        this.meterRegistry = meterRegistry;
     }
 
     public ToolCallResult call(String toolName, Map<String, Object> arguments, McpPrincipal principal) {
         UUID tenantUserId = principal.tenantUserId();
         UUID imapAccountId = principal.imapAccountId();
-
+        Instant start = Instant.now();
+        String targetFolder = extractTargetFolder(arguments);
         String requiredScope = REQUIRED_SCOPE.get(toolName);
+
         if (requiredScope != null && !hasScope(requiredScope)) {
+            recordOutcome(toolName, tenantUserId, imapAccountId, requiredScope, targetFolder,
+                    "denied", "insufficient_scope", start);
             return ToolCallResult.error("Insufficient scope: this action requires '" + requiredScope + "'");
         }
 
@@ -100,12 +117,54 @@ public class ToolDispatcher {
 
                 default -> throw new UnknownToolException(toolName);
             };
+            recordOutcome(toolName, tenantUserId, imapAccountId, requiredScope, targetFolder,
+                    "success", null, start);
             return ToolCallResult.success(objectMapper, result);
         } catch (UnknownToolException e) {
             throw e;
         } catch (RuntimeException e) {
+            recordOutcome(toolName, tenantUserId, imapAccountId, requiredScope, targetFolder,
+                    "error", e.getClass().getSimpleName(), start);
             return ToolCallResult.error(errorMessage(e));
         }
+    }
+
+    private void recordOutcome(String toolName, UUID tenantUserId, UUID imapAccountId, String scopeUsed,
+                                String targetFolder, String resultStatus, String errorCode, Instant start) {
+        Duration elapsed = Duration.between(start, Instant.now());
+        meterRegistry.timer("mcp.tool.calls", "tool", toolName, "result", resultStatus).record(elapsed);
+        int latencyMs = (int) elapsed.toMillis();
+
+        Jwt jwt = currentJwt();
+        String oauthClientId = jwt != null ? jwt.getClaimAsString("client_id") : null;
+        String tokenIdHash = jwt != null && jwt.getId() != null ? sha256Hex(jwt.getId()) : null;
+
+        auditLogService.record(tenantUserId, imapAccountId, oauthClientId, tokenIdHash,
+                toolName, scopeUsed, targetFolder, resultStatus, errorCode, latencyMs);
+    }
+
+    private Jwt currentJwt() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof McpAuthenticationToken mcpAuth
+                && mcpAuth.getCredentials() instanceof Jwt jwt) {
+            return jwt;
+        }
+        return null;
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    private String extractTargetFolder(Map<String, Object> arguments) {
+        return optionalString(arguments, "folder")
+                .or(() -> optionalString(arguments, "sourceFolder"))
+                .orElse(null);
     }
 
     private boolean hasScope(String scope) {

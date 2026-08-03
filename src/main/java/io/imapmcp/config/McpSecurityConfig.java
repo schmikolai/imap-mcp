@@ -8,6 +8,7 @@ import io.imapmcp.ratelimit.RateLimitProperties;
 import io.imapmcp.tenant.TenantContext;
 import io.imapmcp.tenant.TenantContextFilter;
 import io.imapmcp.tenant.TenantUserRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -46,12 +47,15 @@ public class McpSecurityConfig {
                                                        TenantUserRepository tenantUserRepository,
                                                        OAuthProperties oAuthProperties,
                                                        ProxyManager<String> bucket4jProxyManager,
-                                                       RateLimitProperties rateLimitProperties) throws Exception {
+                                                       RateLimitProperties rateLimitProperties,
+                                                       MeterRegistry meterRegistry) throws Exception {
         RateLimitFilter rateLimitFilter = new RateLimitFilter(
                 key -> bucket4jProxyManager.builder().build("rl:mcp:" + key,
                         rateLimitProperties.getMcpToolCalls()::toBucketConfiguration),
                 McpSecurityConfig::tenantOrRemoteAddr,
-                null);
+                null,
+                meterRegistry,
+                "mcp");
 
         http
                 .securityMatcher("/mcp/**")

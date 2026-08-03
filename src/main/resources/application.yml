@@ -77,7 +77,30 @@ imapmcp:
       capacity: 10
       refill-period: 1m
 
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        # Only genuine upstream/connection failures should trip the breaker
+        # — a bad folder name or missing UID (NoSuchElementException) is a
+        # client input error, not IMAP server flakiness, and must not count.
+        record-exceptions:
+          - io.imapmcp.imap.ImapMailService.ImapOperationException
+
 management:
+  # Deliberately a separate port, never published in docker-compose.yml or a
+  # deploy's port mapping. Requests on this port still go through the same
+  # SecurityFilterChains as the main port (no isolated child security
+  # context in this setup) — see SecurityConfig's permitAll on
+  # /actuator/health and /actuator/prometheus, guarded by network isolation
+  # (the port itself is never exposed) rather than application-level auth.
+  server:
+    port: ${MANAGEMENT_PORT:8081}
   endpoints:
     web:
       exposure:
@@ -86,7 +109,3 @@ management:
     health:
       probes:
         enabled: true
-
-logging:
-  pattern:
-    console: "%d{ISO8601} %-5level [%thread] %logger{36} - %msg%n"

@@ -1,7 +1,9 @@
 package io.imapmcp.imap;
 
+import io.imapmcp.audit.AuditLogService;
 import io.imapmcp.tenant.ImapAccount;
 import io.imapmcp.tenant.ImapAccountRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,10 +21,15 @@ public class ImapAccountLockoutService {
 
     private final ImapAccountRepository imapAccountRepository;
     private final ImapProperties properties;
+    private final AuditLogService auditLogService;
+    private final MeterRegistry meterRegistry;
 
-    public ImapAccountLockoutService(ImapAccountRepository imapAccountRepository, ImapProperties properties) {
+    public ImapAccountLockoutService(ImapAccountRepository imapAccountRepository, ImapProperties properties,
+                                      AuditLogService auditLogService, MeterRegistry meterRegistry) {
         this.imapAccountRepository = imapAccountRepository;
         this.properties = properties;
+        this.auditLogService = auditLogService;
+        this.meterRegistry = meterRegistry;
     }
 
     public void checkNotLocked(ImapAccount account) {
@@ -40,6 +47,9 @@ public class ImapAccountLockoutService {
         if (failures >= properties.getLockoutThreshold()) {
             account.setStatus(ImapAccount.Status.LOCKED);
             account.setLockedUntil(Instant.now().plusSeconds(properties.getLockoutBackoffSeconds()));
+            meterRegistry.counter("imap.account.lockouts").increment();
+            auditLogService.record(account.getTenantUser().getId(), account.getId(), null, null,
+                    "account_lockout", null, null, "locked", null, null);
         }
         imapAccountRepository.save(account);
     }

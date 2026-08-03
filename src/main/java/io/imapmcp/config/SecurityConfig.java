@@ -5,6 +5,7 @@ import io.imapmcp.ratelimit.RateLimitFilter;
 import io.imapmcp.ratelimit.RateLimitProperties;
 import io.imapmcp.tenant.TenantContextFilter;
 import io.imapmcp.tenant.TenantUserRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,7 +42,8 @@ public class SecurityConfig {
     @Order(2)
     public SecurityFilterChain webSecurityFilterChain(HttpSecurity http, TenantUserRepository tenantUserRepository,
                                                         ProxyManager<String> bucket4jProxyManager,
-                                                        RateLimitProperties rateLimitProperties) throws Exception {
+                                                        RateLimitProperties rateLimitProperties,
+                                                        MeterRegistry meterRegistry) throws Exception {
         RequestMatcher rateLimitedEndpoints = new OrRequestMatcher(
                 new AntPathRequestMatcher("/login", HttpMethod.POST.name()),
                 new AntPathRequestMatcher("/signup", HttpMethod.POST.name()));
@@ -51,12 +53,21 @@ public class SecurityConfig {
                 key -> bucket4jProxyManager.builder().build("rl:web:" + key,
                         rateLimitProperties.getWebAuth()::toBucketConfiguration),
                 HttpServletRequest::getRemoteAddr,
-                rateLimitedEndpoints);
+                rateLimitedEndpoints,
+                meterRegistry,
+                "web-auth");
 
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/signup", "/login", "/css/**", "/actuator/health", "/error",
-                                "/.well-known/oauth-protected-resource",
+                        // /actuator/** runs on a separate management.server.port
+                        // (see application.yml), but empirically still goes
+                        // through this same chain rather than an isolated
+                        // child security context — permitAll here, not HTTP
+                        // Basic, since the port itself is never published
+                        // externally (defense in depth via network isolation,
+                        // not application-level auth).
+                        .requestMatchers("/signup", "/login", "/css/**", "/actuator/health", "/actuator/prometheus",
+                                "/error", "/.well-known/oauth-protected-resource",
                                 "/.well-known/oauth-protected-resource/mcp").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form

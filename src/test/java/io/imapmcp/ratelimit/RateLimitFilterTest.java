@@ -3,6 +3,8 @@ package io.imapmcp.ratelimit;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.BandwidthBuilder;
 import io.github.bucket4j.Bucket;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,7 +31,8 @@ class RateLimitFilterTest {
 
     @Test
     void allowsRequestsWithinCapacityThenBlocks() throws Exception {
-        RateLimitFilter filter = new RateLimitFilter(bucketResolver(), request -> "same-key", null);
+        RateLimitFilter filter = new RateLimitFilter(bucketResolver(), request -> "same-key", null,
+                new SimpleMeterRegistry(), "test");
         AtomicInteger chainInvocations = new AtomicInteger();
         FilterChain chain = countingChain(chainInvocations);
 
@@ -47,7 +50,8 @@ class RateLimitFilterTest {
 
     @Test
     void independentKeysGetIndependentBuckets() throws Exception {
-        RateLimitFilter filter = new RateLimitFilter(bucketResolver(), RateLimitFilterTest::keyAttribute, null);
+        RateLimitFilter filter = new RateLimitFilter(bucketResolver(), RateLimitFilterTest::keyAttribute, null,
+                new SimpleMeterRegistry(), "test");
         AtomicInteger chainInvocations = new AtomicInteger();
         FilterChain chain = countingChain(chainInvocations);
 
@@ -66,7 +70,7 @@ class RateLimitFilterTest {
     @Test
     void requestsOutsideScopeMatcherAlwaysPassThrough() throws Exception {
         RateLimitFilter filter = new RateLimitFilter(bucketResolver(), request -> "same-key",
-                new AntPathRequestMatcher("/login", "POST"));
+                new AntPathRequestMatcher("/login", "POST"), new SimpleMeterRegistry(), "test");
         AtomicInteger chainInvocations = new AtomicInteger();
         FilterChain chain = countingChain(chainInvocations);
 

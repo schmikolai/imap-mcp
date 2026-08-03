@@ -9,6 +9,7 @@ import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.imapmcp.mcp.McpScopes;
 import io.imapmcp.ratelimit.RateLimitFilter;
 import io.imapmcp.ratelimit.RateLimitProperties;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -62,7 +63,8 @@ public class AuthorizationServerConfig {
     @Order(0)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
                                                                         ProxyManager<String> bucket4jProxyManager,
-                                                                        RateLimitProperties rateLimitProperties) throws Exception {
+                                                                        RateLimitProperties rateLimitProperties,
+                                                                        MeterRegistry meterRegistry) throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 new OAuth2AuthorizationServerConfigurer();
 
@@ -78,7 +80,9 @@ public class AuthorizationServerConfig {
                 key -> bucket4jProxyManager.builder().build("rl:oauth:" + key,
                         rateLimitProperties.getOauthEndpoints()::toBucketConfiguration),
                 HttpServletRequest::getRemoteAddr,
-                rateLimitedEndpoints);
+                rateLimitedEndpoints,
+                meterRegistry,
+                "oauth");
 
         http
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
@@ -163,6 +167,10 @@ public class AuthorizationServerConfig {
                 List<String> audience = new ArrayList<>();
                 audience.add(properties.getIssuerUri());
                 context.getClaims().audience(audience);
+                // Not read anywhere in the OAuth flow itself — added purely so
+                // ToolDispatcher's audit-log write has an oauth_client_id to
+                // record without a second lookup.
+                context.getClaims().claim("client_id", context.getRegisteredClient().getClientId());
             }
         };
     }
