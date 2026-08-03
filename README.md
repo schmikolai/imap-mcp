@@ -75,8 +75,9 @@ Key environment variables (all have sane local-dev defaults via `application-loc
 | `KMS_KEY_ID`, `AWS_REGION` | AWS KMS key for credential encryption (production only) |
 | `OAUTH_ISSUER_URI` | This server's own OAuth issuer identity — must be a fixed, real URL in production |
 | `OAUTH_SEED_CLIENT_ID`, `OAUTH_SEED_CLIENT_SECRET`, `OAUTH_SEED_CLIENT_NAME`, `OAUTH_SEED_CLIENT_REDIRECT_URIS` | One statically-vetted OAuth client to seed on startup (optional — leave `OAUTH_SEED_CLIENT_ID` unset to skip) |
-| `REDIS_HOST`, `REDIS_PORT` | Redis connection (not yet load-bearing until rate limiting lands) |
+| `REDIS_HOST`, `REDIS_PORT` | Redis connection — load-bearing for distributed rate limiting (see `ratelimit/`) |
 | `PORT` | HTTP port (default `8080`) |
+| `MANAGEMENT_PORT` | Actuator/Prometheus port (default `8081`) — never publish this externally, only network isolation keeps `/actuator/prometheus` unauthenticated (see CLAUDE.md) |
 
 ## Testing
 
