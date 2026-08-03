@@ -1,7 +1,5 @@
 package io.imapmcp.mcp;
 
-import io.imapmcp.tenant.ImapAccount;
-import io.imapmcp.tenant.ImapAccountRepository;
 import io.imapmcp.tenant.TenantContext;
 import io.imapmcp.tenant.TenantUser;
 import io.imapmcp.tenant.TenantUserRepository;
@@ -18,39 +16,34 @@ import org.springframework.stereotype.Component;
 import java.util.Collection;
 
 /**
- * Resolves the tenant + IMAP account an access token authorizes, and maps
- * its granted scopes to {@code SCOPE_*} authorities (delegating to the
- * standard {@link JwtGrantedAuthoritiesConverter} for that part).
+ * Resolves the tenant an access token authorizes, and maps its granted
+ * scopes to {@code SCOPE_*} authorities (delegating to the standard
+ * {@link JwtGrantedAuthoritiesConverter} for that part).
  *
  * <p>The token's {@code sub} claim is the human's login email (principal
- * name at the time of the OAuth consent). <b>Known v1 simplification:</b>
- * this resolves to the tenant's <em>first</em> linked IMAP account rather
- * than a specific one chosen during consent — fine while most users link a
- * single account, but revisit once the consent screen lets a user pick
- * which account an agent is being granted access to (the data model already
- * has room for this via a per-grant {@code imap_account_id}).
+ * name at the time of the OAuth consent). A grant is tenant-wide, not tied
+ * to one {@code ImapAccount} — it does not resolve or require any linked
+ * account here; {@link ToolDispatcher} resolves the account per tool call
+ * instead (see {@link McpPrincipal}), which is what lets a grant made before
+ * a second account is linked keep working afterward.
  *
  * <p>Sets {@link TenantContext} itself, immediately after resolving
- * {@code tenantUser} — not left to {@code TenantContextFilter}. This
- * converter's own lookup below queries {@code imap_account}, which is
- * RLS-protected; {@code TenantContextFilter} only runs once authentication
- * (this converter) has already completed, so waiting for it would mean this
- * very query runs with no tenant context set and gets zero rows back under
- * RLS's fail-closed default. {@code TenantContextFilter} still runs
- * afterward and remains responsible for clearing it at the end of the
+ * {@code tenantUser}, rather than leaving it to {@code TenantContextFilter}
+ * (which only runs later, once authentication has completed) — kept even
+ * though this converter no longer queries any RLS-protected table itself,
+ * so a future addition here doesn't reintroduce the fail-closed
+ * zero-rows-under-no-tenant-context trap. {@code TenantContextFilter} still
+ * runs afterward and remains responsible for clearing it at the end of the
  * request.
  */
 @Component
 public class JwtMcpAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
     private final TenantUserRepository tenantUserRepository;
-    private final ImapAccountRepository imapAccountRepository;
     private final JwtGrantedAuthoritiesConverter scopesConverter = new JwtGrantedAuthoritiesConverter();
 
-    public JwtMcpAuthenticationConverter(TenantUserRepository tenantUserRepository,
-                                          ImapAccountRepository imapAccountRepository) {
+    public JwtMcpAuthenticationConverter(TenantUserRepository tenantUserRepository) {
         this.tenantUserRepository = tenantUserRepository;
-        this.imapAccountRepository = imapAccountRepository;
     }
 
     @Override
@@ -60,11 +53,7 @@ public class JwtMcpAuthenticationConverter implements Converter<Jwt, AbstractAut
 
         TenantContext.set(tenantUser.getId());
 
-        ImapAccount account = imapAccountRepository.findByTenantUserId(tenantUser.getId()).stream()
-                .findFirst()
-                .orElseThrow(() -> invalidToken("User has no linked IMAP account"));
-
-        McpPrincipal principal = new McpPrincipal(tenantUser.getId(), account.getId());
+        McpPrincipal principal = new McpPrincipal(tenantUser.getId());
         Collection<GrantedAuthority> authorities = scopesConverter.convert(jwt);
         return new McpAuthenticationToken(principal, jwt, authorities);
     }

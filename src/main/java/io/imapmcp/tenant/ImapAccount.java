@@ -181,6 +181,10 @@ public class ImapAccount {
         return lastVerifiedAt;
     }
 
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
     public void setLastVerifiedAt(Instant lastVerifiedAt) {
         this.lastVerifiedAt = lastVerifiedAt;
     }

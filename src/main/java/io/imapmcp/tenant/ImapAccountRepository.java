@@ -11,6 +11,15 @@ public interface ImapAccountRepository extends JpaRepository<ImapAccount, UUID> 
     List<ImapAccount> findByTenantUserId(UUID tenantUserId);
 
     /**
+     * Same as {@link #findByTenantUserId}, but in a stable, deterministic
+     * order — used wherever multiple linked accounts are listed or fanned
+     * out over (e.g. {@code list_accounts}, or a tool call with no explicit
+     * {@code account} argument), so results are reproducible across calls
+     * rather than whatever order Postgres happens to return.
+     */
+    List<ImapAccount> findByTenantUserIdOrderByCreatedAtAsc(UUID tenantUserId);
+
+    /**
      * Ownership-checked lookup — every IMAP action must resolve the account
      * through this method (never a bare findById) so a mailbox/account id
      * supplied by an agent can't be used to reach another tenant's account.

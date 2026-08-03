@@ -3,11 +3,14 @@ package io.imapmcp.mcp;
 import java.util.UUID;
 
 /**
- * The tenant + IMAP account an authenticated MCP client is authorized to
- * act on. In this phase it's resolved from a single static bearer token
- * (see {@link StaticBearerTokenAuthFilter}); once OAuth lands (plan phase 4)
- * it will be resolved from the access token's subject and granted scopes
- * instead, without any change to {@link ToolDispatcher}.
+ * The tenant an authenticated MCP client is authorized to act on, resolved
+ * from the OAuth access token's subject (see
+ * {@link JwtMcpAuthenticationConverter}). A grant is tenant-wide, not
+ * account-specific — it stays valid for accounts the tenant links after the
+ * grant was made. Deliberately carries no {@code imapAccountId}: which of
+ * the tenant's (possibly several) linked {@code ImapAccount}s a given tool
+ * call touches is resolved per-call by {@link ToolDispatcher}, from an
+ * optional/required {@code account} tool argument (see {@link ToolRegistry}).
  */
-public record McpPrincipal(UUID tenantUserId, UUID imapAccountId) {
+public record McpPrincipal(UUID tenantUserId) {
 }
