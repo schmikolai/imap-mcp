@@ -83,6 +83,7 @@ public class AuthorizationServerConfig {
                 rateLimitedEndpoints,
                 meterRegistry,
                 "oauth");
+        OAuthActionLoggingFilter oauthActionLoggingFilter = new OAuthActionLoggingFilter();
 
         http
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
@@ -119,7 +120,8 @@ public class AuthorizationServerConfig {
                         .defaultAuthenticationEntryPointFor(
                                 new LoginUrlAuthenticationEntryPoint("/login"),
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
-                .addFilterBefore(rateLimitFilter, AuthorizationFilter.class);
+                .addFilterBefore(rateLimitFilter, AuthorizationFilter.class)
+                .addFilterBefore(oauthActionLoggingFilter, AuthorizationFilter.class);
 
         return http.build();
     }
