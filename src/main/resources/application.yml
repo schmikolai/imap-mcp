@@ -34,6 +34,8 @@ spring:
       # ${appDbPassword} tokens in the migration SQL exactly.
       appDbUser: ${DB_APP_USER:imapmcp_app}
       appDbPassword: ${DB_APP_PASSWORD:}
+      grafanaDbUser: ${DB_GRAFANA_USER:grafana_ro}
+      grafanaDbPassword: ${DB_GRAFANA_PASSWORD:}
 
   data:
     redis:

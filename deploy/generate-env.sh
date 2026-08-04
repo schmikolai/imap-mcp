@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Generates dist/.env with fresh, random secrets for docker-compose.prod.yml.
 #
-# Refuses to overwrite an existing .env by default: DB_OWNER_PASSWORD and
-# DB_APP_PASSWORD are baked into the Postgres role at first migration, so
-# silently regenerating them for an already-deployed stack would lock the
-# app out of its own database. Pass --force if you really mean to rotate
+# Refuses to overwrite an existing .env by default: DB_OWNER_PASSWORD,
+# DB_APP_PASSWORD, and DB_GRAFANA_PASSWORD are baked into their Postgres
+# roles at first migration, so silently regenerating them for an
+# already-deployed stack would lock the app (or Grafana) out of the
+# database. Pass --force if you really mean to rotate
 # everything (you'll then need to update the Postgres roles' passwords to
 # match, or wipe the postgres volume for a from-scratch deploy).
 set -euo pipefail
@@ -48,6 +49,10 @@ DB_OWNER_PASSWORD=$(rand_hex 32)
 # V4 migration the first time this stack comes up).
 DB_APP_USER=imapmcp_app
 DB_APP_PASSWORD=$(rand_hex 32)
+# Read-only role, SELECT on audit_log only, for Grafana's PostgreSQL data
+# source (created by the V5 migration the first time this stack comes up).
+DB_GRAFANA_USER=grafana_ro
+DB_GRAFANA_PASSWORD=$(rand_hex 32)
 
 # --- Redis ---
 REDIS_HOST=redis
