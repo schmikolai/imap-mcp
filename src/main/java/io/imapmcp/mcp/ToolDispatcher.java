@@ -10,6 +10,8 @@ import io.imapmcp.mcp.dto.ToolCallResult;
 import io.imapmcp.tenant.ImapAccount;
 import io.imapmcp.tenant.ImapAccountRepository;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -49,6 +51,8 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class ToolDispatcher {
 
+    private static final Logger log = LoggerFactory.getLogger(ToolDispatcher.class);
+
     /**
      * Least-privilege scope required per tool — enforced against the
      * access token's granted scopes (as {@code SCOPE_*} authorities) before
@@ -86,6 +90,7 @@ public class ToolDispatcher {
     public ToolCallResult call(String toolName, Map<String, Object> arguments, McpPrincipal principal) {
         UUID tenantUserId = principal.tenantUserId();
         UUID accountIdForAudit = optionalString(arguments, "account").map(this::tryParseUuid).orElse(null);
+        log.info("MCP tool call: tool={} tenant={} args={}", toolName, tenantUserId, arguments);
         Instant start = Instant.now();
         String targetFolder = extractTargetFolder(arguments);
         String requiredScope = REQUIRED_SCOPE.get(toolName);
