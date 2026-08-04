@@ -18,17 +18,19 @@ See [CLAUDE.md](CLAUDE.md) for the full architectural detail, including hard-won
 
 ## Status
 
-Built in phases; phases 1–5 are implemented and verified end-to-end against a real running instance (not just written — actually exercised: signup/login, IMAP account linking, the full OAuth authorization-code+PKCE+consent flow, MCP tool calls, and cross-tenant isolation at the database level).
+Built in phases; phases 1–6 are implemented and verified end-to-end against a real running instance (not just written — actually exercised: signup/login, IMAP account linking, the full OAuth authorization-code+PKCE+consent flow, MCP tool calls, and cross-tenant isolation at the database level).
 
 - [x] **1 — Foundations**: Spring Boot skeleton, Postgres schema, first-party signup/login
 - [x] **2 — Credential vault + IMAP core**: envelope encryption, IMAP connection pooling, the core mail actions
 - [x] **3 — MCP protocol surface**: JSON-RPC/Streamable HTTP, tool schemas, tool dispatch
 - [x] **4 — OAuth 2.1 Authorization Server**: auth-code+PKCE, custom consent screen, hashed token storage, per-tool scopes
 - [x] **5 — Multi-tenant hardening**: Postgres Row-Level Security, least-privilege database role
-- [ ] **6 — Abuse controls & observability**: rate limiting, IMAP auth-failure circuit breakers, audit log persistence
+- [x] **6 — Abuse controls & observability**: bucket4j/Redis rate limiting, IMAP auth-failure circuit breakers (resilience4j), audit log persistence, Prometheus metrics, structured JSON logging
 - [ ] **7 — Key rotation & operational maturity**: DEK rotation job, revocation cascades, pre-launch security review
 
-Not yet built: open Dynamic Client Registration (agent clients are currently a static, manually-vetted allow-list), and per-grant IMAP account selection during consent (a tenant's *first* linked account is used).
+Also since phase 6: MCP tool calls can now address any of a tenant's linked IMAP accounts individually (a new `list_accounts` tool plus an `account` argument on the others), not just the tenant's first-linked account.
+
+Not yet built: open Dynamic Client Registration (agent clients are currently a static, manually-vetted allow-list).
 
 ## Requirements
 
@@ -54,13 +56,16 @@ Then:
 
 ## MCP tools
 
+An OAuth grant authorizes a tenant, not a single IMAP account, so every tool but `list_accounts` takes an `account` argument (the account id returned by `list_accounts`) identifying which linked account it targets — required on tools that act on one existing message/folder, optional on the two read-only listing tools (omitting it fans out across every linked account instead of just one).
+
 | Tool | Scope required | Description |
 |---|---|---|
-| `list_mailboxes` | `mcp:mail.read` | List all mailboxes/folders in the connected account |
-| `search_messages` | `mcp:mail.read` | Search a mailbox by subject, sender, unread status, and/or date |
+| `list_accounts` | *(none)* | List every IMAP account linked to this tenant (id, display name, host, status) |
+| `list_mailboxes` | `mcp:mail.read` | List all mailboxes/folders in one account, or every linked account if `account` is omitted |
+| `search_messages` | `mcp:mail.read` | Search a mailbox by subject, sender, unread status, and/or date, in one account or every linked account |
 | `read_message` | `mcp:mail.read` | Fetch full message content (sanitized HTML, attachment metadata only) |
 | `create_mailbox` | `mcp:mailbox.manage` | Create a new mailbox/folder |
-| `move_message` | `mcp:mail.write` | Move a message between mailboxes |
+| `move_message` | `mcp:mail.write` | Move a message between mailboxes within the same account |
 | `mark_message` | `mcp:mail.write` | Mark a message read or unread |
 | `trash_message` | `mcp:mail.delete` | Move a message to Trash (soft delete, not permanent expunge) |
 
