@@ -18,16 +18,16 @@ Build/run (Gradle wrapper, no local Gradle install needed):
 ./gradlew compileTestJava             # compile test sources
 ./gradlew test                        # run all tests
 ./gradlew test --tests "io.imapmcp.crypto.*"                              # one package
-./gradlew test --tests "io.imapmcp.crypto.AwsKmsEnvelopeEncryptionServiceTest"  # one class
+./gradlew test --tests "io.imapmcp.crypto.OpenBaoEnvelopeEncryptionServiceTest"  # one class
 ./gradlew bootRun --args='--spring.profiles.active=local'                # run the app locally
 ```
 
-Local dev environment (Postgres + Redis via Docker, no AWS account needed):
+Local dev environment (Postgres + Redis via Docker, no OpenBao instance needed):
 ```
 docker compose up -d
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
-The `local` profile (`application-local.yml`) points at the compose services and activates `LocalDevEncryptionService` in place of real AWS KMS, and seeds a test OAuth client (`local-dev-client` / `local-dev-secret`, redirect `http://localhost:9999/callback`). Never use this profile against real user data — see the class-level Javadoc on `LocalDevEncryptionService`.
+The `local` profile (`application-local.yml`) points at the compose services and activates `LocalDevEncryptionService` in place of real OpenBao, and seeds a test OAuth client (`local-dev-client` / `local-dev-secret`, redirect `http://localhost:9999/callback`). Never use this profile against real user data — see the class-level Javadoc on `LocalDevEncryptionService`.
 
 `ImapMailServiceIntegrationTest` (GreenMail + Testcontainers) additionally needs: Docker with API version ≥ 1.40 (older docker-java/Testcontainers versions may not negotiate correctly against restrictive Docker socket proxies), and `keytool` on PATH (it generates a throwaway self-signed cert at `@BeforeAll` so GreenMail can serve real implicit TLS — production code path is exercised unmodified, never relaxed for tests).
 
@@ -42,7 +42,7 @@ docker build -t imap-mcp .
 
 - `auth/` — the OAuth 2.1 Authorization Server: `AuthorizationServerConfig` (Spring Authorization Server wiring, JWK/signing key, token customizer), `HashedTokenOAuth2AuthorizationService`, `OAuthClientSeeder` (static allow-list, no open Dynamic Client Registration), `ConsentController` (custom consent page).
 - `config/` — the three `SecurityFilterChain` beans and their explicit ordering (see below).
-- `crypto/` — envelope encryption for stored IMAP passwords: `EncryptionService` interface, `AwsKmsEnvelopeEncryptionService` (prod default) vs `LocalDevEncryptionService` (`@Profile("local")`), `AssociatedData` (AAD binding), `SecureImapPassword` (zeroable wrapper).
+- `crypto/` — envelope encryption for stored IMAP passwords: `EncryptionService` interface, `OpenBaoEnvelopeEncryptionService` (prod default) vs `LocalDevEncryptionService` (`@Profile("local")`), `AssociatedData` (AAD binding), `SecureImapPassword` (zeroable wrapper).
 - `imap/` — the IMAP bridge: connection pooling (`ImapConnectionPool`, `ImapStorePooledFactory`), session/TLS setup (`ImapSessionFactory`), account linking + lockout (`ImapAccountLinkingService`, `ImapAccountLockoutService`), the actual mail actions (`ImapMailService`), MIME parsing/sanitization (`MimeContentExtractor`).
 - `mcp/` — the MCP protocol surface: hand-rolled JSON-RPC 2.0 (`mcp/jsonrpc/`) over Streamable HTTP (`McpController`), tool schemas (`ToolRegistry`), tool execution + per-tool scope enforcement (`ToolDispatcher`), OAuth-JWT-to-principal resolution (`JwtMcpAuthenticationConverter`, `McpAuthenticationToken`).
 - `tenant/` — JPA entities/repositories for the human account (`TenantUser`) and their linked IMAP accounts (`ImapAccount`), plus the Postgres RLS tenant-context plumbing (`TenantContext`, `TenantAwareDataSource`, `TenantContextFilter`, `TenantDataSourceConfig` — see "Multi-tenant isolation" below).
@@ -64,7 +64,7 @@ Auth-code + mandatory PKCE (S256) → custom Thymeleaf consent page (not Spring 
 
 ### Credential encryption
 
-Per-`ImapAccount` envelope encryption: a KMS-generated AES-256 DEK encrypts the password locally (Tink's `AesGcmJce`), only the KMS-wrapped DEK is persisted, plaintext DEK is zeroed after use. AAD binds each ciphertext to its exact `(tenant_id, imap_account_id)` row (`AssociatedData`), so a ciphertext copied between rows fails to decrypt instead of silently succeeding. `EncryptionService` is the swappable interface; `AwsKmsEnvelopeEncryptionService` (`@Profile("!local")`) is the real implementation, `LocalDevEncryptionService` (`@Profile("local")`) is a same-process-only stand-in with no KMS dependency, used for local dev and by tests.
+Per-`ImapAccount` envelope encryption: a self-hosted [OpenBao](https://openbao.org) Transit engine generates an AES-256 DEK per record (`transit/datakey/plaintext`), which encrypts the password locally (Tink's `AesGcmJce`); only the OpenBao-wrapped DEK (`transit/decrypt` to unwrap) is persisted, plaintext DEK is zeroed after use. AAD binds each ciphertext to its exact `(tenant_id, imap_account_id)` row (`AssociatedData`), so a ciphertext copied between rows fails to decrypt instead of silently succeeding. `EncryptionService` is the swappable interface; `OpenBaoEnvelopeEncryptionService` (`@Profile("!local")`) is the real implementation (talks to OpenBao over plain HTTP via Spring's `RestClient`, authenticated with a static, least-privilege-scoped token — see the OpenBao setup runbook in README.md), `LocalDevEncryptionService` (`@Profile("local")`) is a same-process-only stand-in with no OpenBao dependency, used for local dev and by tests.
 
 ### MCP protocol surface
 

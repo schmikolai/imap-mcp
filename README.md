@@ -8,7 +8,7 @@ This project assumes it runs in a hostile public environment and is built accord
 
 ## Security model
 
-- **Credentials are envelope-encrypted at rest.** Each linked IMAP account gets its own AES-256 data-encryption key, generated via AWS KMS; only the KMS-wrapped key is stored, never the plaintext key or password. Each ciphertext is cryptographically bound to its exact account row, so it can't be swapped between accounts even in the event of a database compromise.
+- **Credentials are envelope-encrypted at rest.** Each linked IMAP account gets its own AES-256 data-encryption key, generated via a self-hosted [OpenBao](https://openbao.org) Transit engine; only the OpenBao-wrapped key is stored, never the plaintext key or password. Each ciphertext is cryptographically bound to its exact account row, so it can't be swapped between accounts even in the event of a database compromise.
 - **Agents authenticate via OAuth 2.1**, not shared API keys: authorization-code flow with mandatory PKCE, a real consent screen, short-lived JWT access tokens, and rotating refresh tokens. Tokens are stored as SHA-256 hashes — a database leak alone doesn't yield usable bearer tokens.
 - **Least-privilege scopes per action.** An agent's token only grants the specific permissions consented to (`read`, `write`, `manage folders`, `delete`) — enforced before any IMAP call is made. Delete is deliberately its own scope, separate from read/write.
 - **Database-level tenant isolation**, not just application code. Postgres Row-Level Security enforces that one tenant's data is invisible to another, even from a raw, unscoped query — a genuine second layer of defense, not a restatement of the application's own `WHERE` clauses. The app connects as a deliberately unprivileged database role, since RLS means nothing to a superuser.
@@ -36,7 +36,7 @@ Not yet built: open Dynamic Client Registration (agent clients are currently a s
 
 - JDK 21
 - Docker (for Postgres + Redis locally — no local Postgres/Redis install needed)
-- An AWS account with a KMS key, for production use. **Not needed for local development** — see below.
+- A self-hosted [OpenBao](https://openbao.org) instance, for production use. **Not needed for local development** — see below.
 
 ## Quickstart (local development)
 
@@ -45,14 +45,42 @@ docker compose up -d
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-That's it. On first boot, Flyway creates the whole schema *and* the least-privilege database role automatically. The `local` profile swaps AWS KMS for an in-process encryption stand-in (no AWS account needed) and seeds a test OAuth client (`local-dev-client` / `local-dev-secret`, redirect `http://localhost:9999/callback`) so you can exercise the full OAuth flow without a real agent.
+That's it. On first boot, Flyway creates the whole schema *and* the least-privilege database role automatically. The `local` profile swaps OpenBao for an in-process encryption stand-in (no OpenBao instance needed) and seeds a test OAuth client (`local-dev-client` / `local-dev-secret`, redirect `http://localhost:9999/callback`) so you can exercise the full OAuth flow without a real agent.
 
 Then:
 1. Visit `http://localhost:8080/signup` and create an account.
 2. Log in, then link a real IMAP account (a Gmail app-password works well for testing) at `/accounts/link`.
 3. Point an OAuth-capable MCP client at `http://localhost:8080` (metadata: `/.well-known/oauth-authorization-server`) to connect an agent.
 
-**Never point the `local` profile at real user data or deploy it as-is** — its encryption stand-in has no KMS backing at all (see `LocalDevEncryptionService`'s Javadoc).
+**Never point the `local` profile at real user data or deploy it as-is** — its encryption stand-in has no OpenBao backing at all (see `LocalDevEncryptionService`'s Javadoc).
+
+## Production setup: OpenBao
+
+Beyond the compose service already wired up in `deploy/docker-compose.yml`, OpenBao needs a one-time setup before the app can encrypt/decrypt anything, and needs to be manually unsealed again after any restart. From a shell with `bao` (or `vault` — the CLI is API-compatible) pointed at the running container (`bao login` isn't needed yet):
+
+```bash
+export BAO_ADDR=http://localhost:8200   # or wherever the openbao service is reachable
+
+# One-time only:
+bao operator init                        # save the 5 unseal key shares + initial root token somewhere safe, outside the repo/host
+bao operator unseal                      # repeat 3x total, with 3 different key shares
+bao login                                # using the initial root token
+bao secrets enable transit
+bao write -f transit/keys/imap-mcp-dek   # match OPENBAO_TRANSIT_KEY in .env
+
+# Least-privilege policy + token for the app — it should never hold the root token:
+cat <<'EOF' | bao policy write imap-mcp-transit -
+path "transit/datakey/plaintext/imap-mcp-dek" { capabilities = ["create", "update"] }
+path "transit/decrypt/imap-mcp-dek"           { capabilities = ["create", "update"] }
+EOF
+bao token create -policy=imap-mcp-transit -period=768h   # put this token in OPENBAO_TOKEN
+# -period makes it a renewable periodic token (32-day period) rather than a
+# fixed-expiry one — run `bao token renew` against it occasionally, or it'll
+# expire and the app will start failing to encrypt/decrypt.
+
+# After every restart that stops the openbao container/host, it comes back sealed:
+bao operator unseal   # repeat 3x — the app can't decrypt anything until this is done
+```
 
 ## MCP tools
 
@@ -77,7 +105,7 @@ Key environment variables (all have sane local-dev defaults via `application-loc
 |---|---|
 | `DB_URL`, `DB_APP_USER`, `DB_APP_PASSWORD` | The app's own runtime database connection (least-privilege role) |
 | `DB_OWNER_USER`, `DB_OWNER_PASSWORD` | Schema-owning role Flyway uses to run migrations |
-| `KMS_KEY_ID`, `AWS_REGION` | AWS KMS key for credential encryption (production only) |
+| `OPENBAO_ADDR`, `OPENBAO_TOKEN`, `OPENBAO_TRANSIT_KEY` | Self-hosted OpenBao Transit engine for credential encryption (production only) — see "Production setup: OpenBao" above |
 | `OAUTH_ISSUER_URI` | This server's own OAuth issuer identity — must be a fixed, real URL in production |
 | `OAUTH_SEED_CLIENT_ID`, `OAUTH_SEED_CLIENT_SECRET`, `OAUTH_SEED_CLIENT_NAME`, `OAUTH_SEED_CLIENT_REDIRECT_URIS` | One statically-vetted OAuth client to seed on startup (optional — leave `OAUTH_SEED_CLIENT_ID` unset to skip) |
 | `REDIS_HOST`, `REDIS_PORT` | Redis connection — load-bearing for distributed rate limiting (see `ratelimit/`) |
@@ -91,7 +119,7 @@ Key environment variables (all have sane local-dev defaults via `application-loc
 ./gradlew test --tests "io.imapmcp.crypto.*"                      # one package
 ```
 
-`ImapMailServiceIntegrationTest` additionally needs Docker (API ≥ 1.40) and `keytool` on `PATH` — it spins up a real GreenMail IMAP server with implicit TLS to exercise the production code path unmodified.
+`ImapMailServiceIntegrationTest` additionally needs Docker (API ≥ 1.40) and `keytool` on `PATH` — it spins up a real GreenMail IMAP server with implicit TLS to exercise the production code path unmodified. `OpenBaoEnvelopeEncryptionServiceIntegrationTest` similarly needs Docker — it spins up a real (dev-mode, throwaway) OpenBao container to exercise the actual Transit HTTP/JSON contract.
 
 ## License
 

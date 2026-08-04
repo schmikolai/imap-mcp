@@ -53,11 +53,14 @@ DB_APP_PASSWORD=$(rand_hex 32)
 REDIS_HOST=redis
 REDIS_PORT=6379
 
-# --- Credential encryption (AWS KMS) — cannot be auto-generated, fill in manually ---
-KMS_KEY_ID=
-AWS_REGION=eu-central-1
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
+# --- Credential encryption (self-hosted OpenBao Transit engine) ---
+# OPENBAO_TOKEN cannot be auto-generated here — it's minted only after you've
+# run OpenBao's one-time init/unseal/transit-setup runbook (see README.md),
+# since it must be a least-privilege token scoped to the transit key below,
+# not the initial root token.
+OPENBAO_ADDR=http://openbao:8200
+OPENBAO_TOKEN=
+OPENBAO_TRANSIT_KEY=imap-mcp-dek
 
 # --- OAuth ---
 # Must be this server's real, fixed public URL in production — cannot be
@@ -76,5 +79,5 @@ chmod 600 "$ENV_FILE"
 
 echo "Wrote $ENV_FILE (mode 600)."
 echo "Still needs manual values before 'docker compose -f docker-compose.prod.yml up -d':"
-echo "  IMAGE, KMS_KEY_ID, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, OAUTH_ISSUER_URI"
+echo "  IMAGE, OPENBAO_TOKEN (after running the OpenBao setup runbook in README.md), OAUTH_ISSUER_URI"
 echo "  (and OAUTH_SEED_CLIENT_ID/NAME/REDIRECT_URIS if you want a seeded OAuth client)"

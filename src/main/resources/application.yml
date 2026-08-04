@@ -49,8 +49,9 @@ server:
 
 imapmcp:
   crypto:
-    kms-key-id: ${KMS_KEY_ID:}
-    aws-region: ${AWS_REGION:eu-central-1}
+    openbao-address: ${OPENBAO_ADDR:}
+    openbao-token: ${OPENBAO_TOKEN:}
+    transit-key-name: ${OPENBAO_TRANSIT_KEY:imap-mcp-dek}
   imap:
     connect-timeout-ms: 10000
     read-timeout-ms: 15000

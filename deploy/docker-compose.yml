@@ -2,8 +2,9 @@
 #
 # Usage:
 #   ./generate-env.sh                                  # once, to create .env
-#   # then fill in IMAGE, KMS_KEY_ID, AWS_*, OAUTH_ISSUER_URI in .env — see
-#   # generate-env.sh's own output for exactly which keys need manual values
+#   # then fill in IMAGE, OPENBAO_TOKEN, OAUTH_ISSUER_URI in .env — see
+#   # generate-env.sh's own output for exactly which keys need manual values,
+#   # and README.md's "Production setup: OpenBao" for how to obtain the token
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Unlike docker-compose.yml at the repo root (local dev), postgres/redis
@@ -19,21 +20,26 @@ services:
       options:
         loki-url: "http://localhost:3100/loki/api/v1/push"
     image: ${IMAGE}:${IMAGE_TAG}
+    pull_policy: always
     env_file:
       - .env
-    ports:
-      - "${PORT:-8080}:8080"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.imap-mcp.rule=Host(`${OAUTH_ISSUER_URI}`)
+      - traefik.http.routers.imap-mcp.rule=Host(`imap-mcp.schmikolai.de`)
       - traefik.http.routers.imap-mcp.tls=true
       - traefik.http.routers.imap-mcp.entrypoints=websecure
       - traefik.http.routers.imap-mcp.tls.certresolver=mytlschallenge
+      - traefik.docker.network=shared
+    networks:
+      - default
+      - shared
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      openbao:
+        condition: service_started
     restart: unless-stopped
 
   postgres:
@@ -44,9 +50,6 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
-      # The schema-owning role Flyway migrates as (V4 migration then creates
-      # the unprivileged DB_APP_USER role the app actually connects as) —
-      # see the "Multi-tenant isolation" note in CLAUDE.md.
       POSTGRES_USER: ${DB_OWNER_USER}
       POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD}
     volumes:
@@ -73,6 +76,37 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Self-hosted KMS replacement (Transit secrets engine) — see
+  # "Credential encryption" in CLAUDE.md. Never publish 8200 externally;
+  # only the app talks to it, over the compose-internal network. Comes up
+  # sealed after every restart — see the one-time setup / post-restart
+  # unseal runbook in README.md before the app can encrypt/decrypt anything.
+  openbao:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+    image: openbao/openbao:2.1.0
+    # No explicit -config flag here: docker-entrypoint.sh already injects
+    # "-config=/openbao/config" (BAO_CONFIG_DIR) whenever the first arg is
+    # "server". Adding our own -config pointing at the file inside that same
+    # directory made bao parse config.hcl twice and try to bind :8200 twice
+    # in one process ("address already in use") — a real boot loop this
+    # caused in production. Just mounting the file into BAO_CONFIG_DIR is
+    # enough.
+    command: ["server"]
+    volumes:
+      - ./openbao/config.hcl:/openbao/config/config.hcl:ro
+      - imapmcp-openbao-data:/openbao/file
+    restart: unless-stopped
+
 volumes:
   imapmcp-postgres-data:
   imapmcp-redis-data:
+  imapmcp-openbao-data:
+
+networks:
+  default:
+  shared:
+    external: true
+    name: shared

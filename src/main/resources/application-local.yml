@@ -28,8 +28,9 @@ spring:
 
 imapmcp:
   crypto:
-    kms-key-id: local-dev-unused
-    aws-region: eu-central-1
+    # Unused under this profile — LocalDevEncryptionService never talks to
+    # OpenBao, no local instance needed for dev.
+    transit-key-name: local-dev-unused
   oauth:
     issuer-uri: http://localhost:8080
     seed-client:

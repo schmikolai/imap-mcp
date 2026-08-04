@@ -6,8 +6,9 @@ package io.imapmcp.crypto;
  * {@code key_version} columns on {@code imap_account}.
  *
  * @param packedCiphertext nonce||ciphertext||tag, as produced by the local AEAD primitive
- * @param wrappedDek       the data encryption key, wrapped (encrypted) by the KMS master key
- * @param kmsKeyId         identifier of the KMS master key used to wrap {@code wrappedDek}
+ * @param wrappedDek       the data encryption key, wrapped (encrypted) by the master key
+ * @param kmsKeyId         identifier of the master key used to wrap {@code wrappedDek}
+ *                         (an OpenBao Transit key name)
  * @param keyVersion       crypto-agility marker; bumped when a record is re-encrypted under a new DEK
  */
 public record EnvelopeCiphertext(

@@ -5,24 +5,36 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "imapmcp.crypto")
 public class CryptoProperties {
 
-    /** ARN or alias of the KMS Customer Master Key used to wrap per-record DEKs. */
-    private String kmsKeyId;
+    /** Base URL of the OpenBao server, e.g. {@code http://openbao:8200}. */
+    private String openbaoAddress;
 
-    private String awsRegion;
+    /** Token used to authenticate to OpenBao (sent as the {@code X-Vault-Token} header). */
+    private String openbaoToken;
 
-    public String getKmsKeyId() {
-        return kmsKeyId;
+    /** Name of the OpenBao Transit key used to wrap per-record DEKs. */
+    private String transitKeyName;
+
+    public String getOpenbaoAddress() {
+        return openbaoAddress;
     }
 
-    public void setKmsKeyId(String kmsKeyId) {
-        this.kmsKeyId = kmsKeyId;
+    public void setOpenbaoAddress(String openbaoAddress) {
+        this.openbaoAddress = openbaoAddress;
     }
 
-    public String getAwsRegion() {
-        return awsRegion;
+    public String getOpenbaoToken() {
+        return openbaoToken;
     }
 
-    public void setAwsRegion(String awsRegion) {
-        this.awsRegion = awsRegion;
+    public void setOpenbaoToken(String openbaoToken) {
+        this.openbaoToken = openbaoToken;
+    }
+
+    public String getTransitKeyName() {
+        return transitKeyName;
+    }
+
+    public void setTransitKeyName(String transitKeyName) {
+        this.transitKeyName = transitKeyName;
     }
 }

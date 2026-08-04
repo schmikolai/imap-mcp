@@ -57,12 +57,11 @@ dependencies {
     implementation("org.eclipse.angus:jakarta.mail:2.0.3")
     implementation("org.apache.commons:commons-pool2:2.12.0")
 
-    // Crypto / KMS. Tink doesn't publish a BOM; tink-awskms:1.11.0 is the
-    // latest available and pins its own tink core dependency to 1.15.0 (see
-    // its POM), so tink is pinned to match rather than left to float higher.
+    // Crypto — Tink's local AEAD primitive wraps/unwraps secrets; the DEK
+    // itself is generated/wrapped by OpenBao's Transit engine over plain
+    // HTTP (RestClient, from spring-boot-starter-web — no dedicated client
+    // dependency needed).
     implementation("com.google.crypto.tink:tink:1.15.0")
-    implementation("com.google.crypto.tink:tink-awskms:1.11.0")
-    implementation("software.amazon.awssdk:kms:2.28.10")
 
     // HTML sanitization
     implementation("org.jsoup:jsoup:1.18.1")
@@ -88,4 +87,14 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // One JVM per test class: ImapMailServiceIntegrationTest relies on JVM-wide
+    // javax.net.ssl.trustStore system properties for its throwaway GreenMail
+    // cert (see its Javadoc), which only works if nothing else in the same JVM
+    // has already triggered the JDK's default SSLContext to cache the stock
+    // cacerts first — e.g. building a java.net.http.HttpClient-backed RestClient
+    // (crypto/OpenBaoEnvelopeEncryptionService and its tests) elsewhere in the
+    // suite. forkEvery isolates each class's JVM so this ordering accident
+    // can't happen, rather than depending on which class Gradle happens to run
+    // first.
+    forkEvery = 1
 }

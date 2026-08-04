@@ -8,16 +8,17 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 
 /**
- * Local-development stand-in for {@link AwsKmsEnvelopeEncryptionService},
+ * Local-development stand-in for {@link OpenBaoEnvelopeEncryptionService},
  * active only under the "local" Spring profile so the app can run end to
  * end (docker-compose up + ./gradlew bootRun --args='--spring.profiles.active=local')
- * without an AWS account. Uses one AES-256 key generated fresh in memory at
- * process startup — there is no KMS-backed master key at all.
+ * without a running OpenBao instance. Uses one AES-256 key generated fresh
+ * in memory at process startup — there is no OpenBao-backed master key at
+ * all.
  *
  * <p><b>Never use this outside local development.</b> Every secret encrypted
  * under this profile becomes permanently unreadable the moment the process
  * restarts (the key is gone), and there is no envelope protection — anyone
- * with heap access has the key. It exists purely to remove the AWS
+ * with heap access has the key. It exists purely to remove the OpenBao
  * dependency from the local dev loop.
  */
 @Service
